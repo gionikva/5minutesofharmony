@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from django.conf import settings
+from .utils import time_until_next_action, user_has_action
 
 
 @api_view(["POST"])
@@ -88,15 +89,7 @@ def my_profile(request):
     {"username": "...", "email": "...", "time_until_next_action": 0}
     """
     user = request.user
-    profile = getattr(user, "profile", None)
-    # default tick seconds
-    tick = getattr(settings, "ACTION_TICK_SECONDS", 300)
-
-    if profile is None or profile.last_used is None:
-        remaining = 0
-    else:
-        elapsed = (timezone.now() - profile.last_used).total_seconds()
-        remaining = max(0, int(tick - elapsed))
+    remaining = time_until_next_action(user)
 
     return Response(
         {
@@ -115,11 +108,4 @@ def has_action(request):
     Response example (200): {"has_action": true}
     """
     user = request.user
-    profile = getattr(user, "profile", None)
-    has = True
-    if profile is None:
-        has = True
-    else:
-        has = bool(profile.has_action)
-
-    return Response({"has_action": has})
+    return Response({"has_action": user_has_action(user)})
