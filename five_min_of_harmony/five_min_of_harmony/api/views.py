@@ -4,6 +4,9 @@ from rest_framework import status, permissions
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from django.contrib.auth import get_user_model
+from django.utils import timezone
+from django.conf import settings
+from .models import Profile
 
 
 @api_view(["POST"])
@@ -41,8 +44,16 @@ def login_view(request):
 def users_list(request):
     """Return a list of users (username and email). Requires authentication."""
     User = get_user_model()
-    qs = User.objects.all().values("username", "email")
-    return Response(list(qs))
+    users = []
+    for u in User.objects.all():
+        profile = getattr(u, "profile", None)
+        has_action = True
+        if profile is not None:
+            has_action = profile.has_action
+        users.append(
+            {"username": u.username, "email": u.email, "has_action": has_action}
+        )
+    return Response(users)
 
 
 @api_view(["POST"])
@@ -71,8 +82,35 @@ def register_view(request):
         )
 
     user = User.objects.create_user(username=username, email=email, password=password)
+    # ensure profile exists (signal may create it; do defensively)
+    Profile.objects.get_or_create(user=user)
     token, _ = Token.objects.get_or_create(user=user)
     return Response(
         {"token": token.key, "username": user.username, "email": user.email},
         status=status.HTTP_201_CREATED,
+    )
+
+
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def use_action(request):
+    """Consume the user's action if available.
+
+    If available, set last_used to now and return success. Otherwise return 400.
+    """
+    user = request.user
+    profile, _ = Profile.objects.get_or_create(user=user)
+    if not profile.has_action:
+        return Response(
+            {"detail": "action not available"}, status=status.HTTP_400_BAD_REQUEST
+        )
+    profile.last_used = timezone.now()
+    profile.save()
+    return Response(
+        {
+            "detail": "action consumed",
+            "next_available_in_seconds": int(
+                getattr(settings, "ACTION_TICK_SECONDS", 300)
+            ),
+        }
     )
