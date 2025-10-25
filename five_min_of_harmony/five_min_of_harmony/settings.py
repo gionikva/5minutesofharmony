@@ -147,3 +147,7 @@ REST_FRAMEWORK = {
         "rest_framework.permissions.DjangoModelPermissionsOrAnonReadOnly"
     ],
 }
+
+# How many seconds between action refills for a user. Can be overridden by .env
+# Example: ACTION_TICK_SECONDS=300
+ACTION_TICK_SECONDS = int(config.get("ACTION_TICK_SECONDS", 300))
