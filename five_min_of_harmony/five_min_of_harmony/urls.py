@@ -46,9 +46,7 @@ router.register(r"users", UserViewSet)
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/", include(router.urls)),
-    # Token-based auth endpoint (DRF built-in) - accepts POST {username, password} -> {token}
-    path("api/auth/token/", obtain_auth_token, name="api_token_auth"),
-    # A custom login view that returns token + basic user info is added in
-    # five_min_of_harmony.api.views and wired under /api/auth/ (login/ and users/)
-    path("api/auth/", include("five_min_of_harmony.api.urls")),
+    # Using session/cookie-based auth instead of token endpoint.
+    # A custom login view and auth endpoints are provided by the Auth app
+    path("api/auth/", include("apps.Auth.urls")),
 ]
