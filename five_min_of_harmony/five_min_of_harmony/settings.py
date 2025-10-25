@@ -130,7 +130,7 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # Keep Django built-ins from above, then add REST framework and token auth.
 INSTALLED_APPS += [
     "rest_framework",
-    "corsheaders",
+    "rest_framework.authtoken",
 ]
 
 # Register our local api app so tests and urls resolve
@@ -141,22 +141,10 @@ INSTALLED_APPS += [
 # REST framework configuration
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.TokenAuthentication",
         "rest_framework.authentication.SessionAuthentication",
-        "rest_framework.authentication.BasicAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.DjangoModelPermissionsOrAnonReadOnly"
     ],
 }
-
-# How many seconds between action refills for a user. Can be overridden by .env
-# Example: ACTION_TICK_SECONDS=300
-ACTION_TICK_SECONDS = int(config.get("ACTION_TICK_SECONDS", 300))
-
-# CORS configuration for local development (React dev server)
-# Allow credentials so cookies (session + CSRF) can be sent from the frontend.
-# Adjust CORS_ALLOWED_ORIGINS to your frontend origin(s) in production.
-CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-]
