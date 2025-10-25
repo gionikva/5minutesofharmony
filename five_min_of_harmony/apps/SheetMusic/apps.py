@@ -1,6 +1,6 @@
 from django.apps import AppConfig
 
 
-class MeasureConfig(AppConfig):
+class SheetMusicConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
-    name = 'measure'
+    name = 'apps.SheetMusic'
