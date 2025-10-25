@@ -1,9 +1,10 @@
 .venv/
 .env
+.DS_Store
 __pycache__/
 five_min_of_harmony/db.sqlite3
 db.sqlite3
+__pycache__/
 *.pyc
 myenv/
 venv/
-.DS_Store
