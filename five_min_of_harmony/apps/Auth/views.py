@@ -13,10 +13,21 @@ from django.middleware.csrf import get_token
 @api_view(["POST"])
 @permission_classes([permissions.AllowAny])
 def login_view(request):
-    """Authenticate a user and return a token + basic user info.
+    """Authenticate a user and create a server-side session cookie.
+
+    This endpoint accepts JSON with `username` and `password`. On success it
+    calls Django's `login()` which attaches an HttpOnly session cookie
+    (e.g. `sessionid`) to the response. The cookie is not accessible to JavaScript
+    (HttpOnly); the browser stores and sends it automatically on subsequent
+    requests to the same backend origin when the frontend includes credentials
+    (e.g. fetch(..., { credentials: 'include' })).
+
+    For single-page frontends, call the `csrf_token_view` first to bootstrap
+    a `csrftoken` cookie and include that token in the `X-CSRFToken` header for
+    unsafe requests (POST/PUT/DELETE).
 
     Expected POST body: {"username": "...", "password": "..."}
-    Response (200): {"token": "...", "username": "...", "email": "..."}
+    Response (200): {"username": "...", "email": "..."}
     Response (400): {"detail": "Invalid credentials"}
     """
     username = request.data.get("username")
@@ -42,7 +53,13 @@ def login_view(request):
 @api_view(["GET"])
 @permission_classes([permissions.IsAuthenticated])
 def users_list(request):
-    """Return a list of users (username and email). Requires authentication."""
+    """Return a list of users (username, email, and has_action).
+
+    Requires an authenticated session. The client should have a valid
+    HttpOnly session cookie (set by `login_view`) which the browser will send
+    automatically when requests include credentials. This endpoint does not
+    accept token-based Authorization headers.
+    """
     User = get_user_model()
     users = []
     for u in User.objects.all():
@@ -59,10 +76,13 @@ def users_list(request):
 @api_view(["POST"])
 @permission_classes([permissions.AllowAny])
 def register_view(request):
-    """Create a user with username and password.
+    """Register a new user and create a session cookie.
 
-    Expected POST body: {"username": "...", "password": "...", "email": "..." (optional)}
-    Returns 201 with token and user info on success.
+    Expected POST body: {"username": "...", "password": "...", "email": "..."}
+    On success this will create the user, ensure a Profile exists, and call
+    `login()` to create the server-side session (cookie). Frontends should
+    bootstrap CSRF before calling this endpoint and include the `X-CSRFToken`
+    header for the request.
     """
     username = request.data.get("username")
     password = request.data.get("password")
@@ -94,9 +114,13 @@ def register_view(request):
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
 def use_action(request):
-    """Consume the user's action if available.
+    """Consume the user's action if available (requires session cookie).
 
-    If available, set last_used to now and return success. Otherwise return 400.
+    This endpoint requires the user to be authenticated via the Django
+    session cookie. Clients should include the `X-CSRFToken` header when
+    making POST requests. If the user has an available action, `last_used`
+    is updated and a success response is returned; otherwise a 400 is
+    returned indicating the action is on cooldown.
     """
     user = request.user
     profile, _ = Profile.objects.get_or_create(user=user)
