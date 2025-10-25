@@ -33,7 +33,15 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <Links />
       </head>
       <body>
-        {children}
+        <header className="fixed top-0 left-0 right-0 bg-white border-b z-20">
+          <div className="container mx-auto flex items-center justify-between px-4 py-3">
+            <div className="text-lg font-semibold">5 Minutes of Harmony</div>
+            <nav>
+              <a href="/login" className="btn btn-ghost">Log in</a>
+            </nav>
+          </div>
+        </header>
+        <main className="pt-16">{children}</main>
         <ScrollRestoration />
         <Scripts />
       </body>

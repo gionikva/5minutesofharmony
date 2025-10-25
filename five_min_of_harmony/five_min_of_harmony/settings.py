@@ -44,6 +44,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -126,10 +127,10 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # Installed Apps
 
-# Keep Django built-ins from above, then add REST framework and token auth.
+# Keep Django built-ins from above, then add REST framework and CORS headers.
 INSTALLED_APPS += [
     "rest_framework",
-    "rest_framework.authtoken",
+    "corsheaders",
 ]
 
 # Register our local api app so tests and urls resolve
@@ -140,10 +141,28 @@ INSTALLED_APPS += [
 # REST framework configuration
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework.authentication.TokenAuthentication",
         "rest_framework.authentication.SessionAuthentication",
+        "rest_framework.authentication.BasicAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.DjangoModelPermissionsOrAnonReadOnly"
     ],
 }
+
+# How many seconds between action refills for a user. Can be overridden by .env
+# Example: ACTION_TICK_SECONDS=300
+ACTION_TICK_SECONDS = int(config.get("ACTION_TICK_SECONDS", 300))
+
+# CORS configuration for local development (React dev server)
+# Allow credentials so cookies (session + CSRF) can be sent from the frontend.
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+]
+
+# Cookie settings for cross-site development; in production use Secure=True and proper domains.
+SESSION_COOKIE_SAMESITE = "None"
+CSRF_COOKIE_SAMESITE = "None"
+SESSION_COOKIE_SECURE = False
+CSRF_COOKIE_SECURE = False

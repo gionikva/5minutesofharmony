@@ -19,7 +19,8 @@ from django.contrib import admin
 from django.urls import path, include
 from django.contrib.auth.models import User
 from rest_framework import routers, serializers, viewsets
-from rest_framework.authtoken.views import obtain_auth_token
+
+# token endpoint removed — using session/cookie-based auth
 
 # We'll add a small API login view separately and wire it under /api/auth/login/
 
