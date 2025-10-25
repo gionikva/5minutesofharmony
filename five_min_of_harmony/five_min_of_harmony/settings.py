@@ -123,3 +123,27 @@ STATIC_URL = "static/"
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# Installed Apps
+
+# Keep Django built-ins from above, then add REST framework and token auth.
+INSTALLED_APPS += [
+    "rest_framework",
+    "rest_framework.authtoken",
+]
+
+# Register our local api app so tests and urls resolve
+INSTALLED_APPS += [
+    "five_min_of_harmony.api.apps.ApiConfig",
+]
+
+# REST framework configuration
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.TokenAuthentication",
+        "rest_framework.authentication.SessionAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.DjangoModelPermissionsOrAnonReadOnly"
+    ],
+}

@@ -14,9 +14,41 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
-from django.contrib import admin
-from django.urls import path
 
+from django.contrib import admin
+from django.urls import path, include
+from django.contrib.auth.models import User
+from rest_framework import routers, serializers, viewsets
+from rest_framework.authtoken.views import obtain_auth_token
+
+# We'll add a small API login view separately and wire it under /api/auth/login/
+
+
+# Serializers define the API representation.
+class UserSerializer(serializers.HyperlinkedModelSerializer):
+    class Meta:
+        model = User
+        fields = ["url", "username", "email", "is_staff"]
+
+
+# ViewSets define the view behavior.
+class UserViewSet(viewsets.ModelViewSet):
+    queryset = User.objects.all()
+    serializer_class = UserSerializer
+
+
+# Routers provide an easy way of automatically determining the URL conf.
+router = routers.DefaultRouter()
+router.register(r"users", UserViewSet)
+
+# Wire up our API using automatic URL routing.
+# Additionally, we include login URLs for the browsable API.
 urlpatterns = [
-    path('admin/', admin.site.urls),
+    path("admin/", admin.site.urls),
+    path("api/", include(router.urls)),
+    # Token-based auth endpoint (DRF built-in) - accepts POST {username, password} -> {token}
+    path("api/auth/token/", obtain_auth_token, name="api_token_auth"),
+    # A custom login view that returns token + basic user info is added in
+    # five_min_of_harmony.api.views and wired under /api/auth/ (login/ and users/)
+    path("api/auth/", include("five_min_of_harmony.api.urls")),
 ]
