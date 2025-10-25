@@ -135,7 +135,7 @@ INSTALLED_APPS += [
 
 # Register our local api app so tests and urls resolve
 INSTALLED_APPS += [
-    "five_min_of_harmony.api.apps.ApiConfig",
+    "apps.Auth.apps.AuthConfig",
 ]
 
 # REST framework configuration
