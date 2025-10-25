@@ -1,3 +1,4 @@
+import React from "react";
 import {
   isRouteErrorResponse,
   Links,
@@ -9,6 +10,7 @@ import {
 
 import type { Route } from "./+types/root";
 import "./app.css";
+import Navbar from "./components/Navbar";
 
 export const links: Route.LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -33,14 +35,15 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <Links />
       </head>
       <body>
-        <header className="fixed top-0 left-0 right-0 bg-white border-b z-20">
+        <header className="fixed top-0 left-0 right-0 bg-gray-900 border-b z-20">
           <div className="container mx-auto flex items-center justify-between px-4 py-3">
-            <div className="text-lg font-semibold">5 Minutes of Harmony</div>
-            <nav>
-              <a href="/login" className="btn btn-ghost">Log in</a>
-            </nav>
+            <div className="text-lg font-semibold text-white">5 Minutes of Harmony</div>
+              <nav>
+                {/* server-rendered placeholder for client-mounted navbar portal */}
+                <div id="nav-root"></div>
+              </nav>
           </div>
-        </header>
+  </header>
         <main className="pt-16">{children}</main>
         <ScrollRestoration />
         <Scripts />
@@ -50,7 +53,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-  return <Outlet />;
+  // Render the Navbar component directly. Navbar is safe to import during SSR
+  // because it returns null on the server (it only accesses the DOM inside useEffect).
+  return (
+    <>
+      <Outlet />
+      <Navbar />
+    </>
+  );
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
