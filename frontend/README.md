@@ -44,3 +44,30 @@ You don’t have to ever use `eject`. The curated feature set is suitable for sm
 You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
 
 To learn React, check out the [React documentation](https://reactjs.org/).
+
+## Auth demo (CSRF + session example)
+
+There's a small demo React component at `src/AuthDemo.tsx` that shows how to:
+
+- Bootstrap CSRF (GET `/api/auth/csrf/`)
+- Login (POST `/api/auth/login/` which sets a session cookie)
+- Call a protected POST `/api/auth/use_action/` and GET `/api/auth/users/` using the session
+
+To use it, import and render the component in `src/App.tsx`:
+
+```tsx
+import React from 'react';
+import AuthDemo from './AuthDemo';
+
+function App() {
+	return (
+		<div>
+			<AuthDemo />
+		</div>
+	);
+}
+
+export default App;
+```
+
+When running the React dev server, make sure your backend is running at `http://127.0.0.1:8000` or update the `apiBase` in the component.

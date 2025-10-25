@@ -1,5 +1,4 @@
-from django.contrib.auth import authenticate
-from rest_framework.authtoken.models import Token
+from django.contrib.auth import authenticate, login
 from rest_framework import status, permissions
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
@@ -7,6 +6,8 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from django.conf import settings
 from .models import Profile
+from django.views.decorators.csrf import ensure_csrf_cookie
+from django.middleware.csrf import get_token
 
 
 @api_view(["POST"])
@@ -33,10 +34,9 @@ def login_view(request):
             {"detail": "Invalid credentials"}, status=status.HTTP_400_BAD_REQUEST
         )
 
-    token, _ = Token.objects.get_or_create(user=user)
-    return Response(
-        {"token": token.key, "username": user.username, "email": user.email}
-    )
+    # create a session (cookie-based) for the authenticated user
+    login(request, user)
+    return Response({"username": user.username, "email": user.email})
 
 
 @api_view(["GET"])
@@ -84,10 +84,10 @@ def register_view(request):
     user = User.objects.create_user(username=username, email=email, password=password)
     # ensure profile exists (signal may create it; do defensively)
     Profile.objects.get_or_create(user=user)
-    token, _ = Token.objects.get_or_create(user=user)
+    # log the user in (session cookie)
+    login(request, user)
     return Response(
-        {"token": token.key, "username": user.username, "email": user.email},
-        status=status.HTTP_201_CREATED,
+        {"username": user.username, "email": user.email}, status=status.HTTP_201_CREATED
     )
 
 
@@ -114,3 +114,14 @@ def use_action(request):
             ),
         }
     )
+
+
+# Provide a CSRF-friendly endpoint. Hitting this (GET) will set the csrftoken cookie
+# and return the current token in JSON so SPA frontends can bootstrap and include
+# the token in subsequent unsafe requests (POST/PUT/DELETE).
+@ensure_csrf_cookie
+@api_view(["GET"])
+@permission_classes([permissions.AllowAny])
+def csrf_token_view(request):
+    token = get_token(request)
+    return Response({"csrfToken": token})

@@ -27,11 +27,7 @@ class AuthApiTests(TestCase):
             format="json",
         )
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
-        self.assertIn("token", resp.data)
-        token = resp.data["token"]
-
-        # Use token to GET users
-        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token}")
+        # Session cookie should now be set on the test client; we can call protected endpoints
         resp2 = self.client.get("/api/auth/users/")
         self.assertEqual(resp2.status_code, status.HTTP_200_OK)
         # Expect at least one user matching the username
@@ -64,11 +60,7 @@ class AuthApiTests(TestCase):
             format="json",
         )
         self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
-        self.assertIn("token", resp.data)
-
-        # Use token to confirm user exists in users list
-        token = resp.data["token"]
-        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token}")
+        # After registration, session cookie should be set and client authenticated
         resp2 = self.client.get("/api/auth/users/")
         self.assertEqual(resp2.status_code, status.HTTP_200_OK)
         usernames = [u.get("username") for u in resp2.data]
@@ -91,8 +83,7 @@ class AuthApiTests(TestCase):
             {"username": self.username, "password": self.password},
             format="json",
         )
-        token = resp.data["token"]
-        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token}")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
 
         # First use should succeed
         resp_use = self.client.post("/api/auth/use_action/")
@@ -110,8 +101,7 @@ class AuthApiTests(TestCase):
             {"username": self.username, "password": self.password},
             format="json",
         )
-        token = resp.data["token"]
-        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token}")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
 
         # consume
         resp_use = self.client.post("/api/auth/use_action/")
