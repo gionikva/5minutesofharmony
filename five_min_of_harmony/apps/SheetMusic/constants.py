@@ -1,0 +1,4 @@
+TOTAL_MEASURES = 80
+PITCHES = ["A","B","C","D","E","F","G"]
+FLOURISHES = ["FLAT","SHARP"]
+VALUES = [0,1,2,4,8,16]
