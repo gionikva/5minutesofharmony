@@ -18,18 +18,17 @@ class AuthApiTests(TestCase):
         self.client = APIClient()
 
     def test_login_and_get_users_with_token(self):
-        # Login
+        # Login (should set a session cookie)
         resp = self.client.post(
             "/api/auth/login/",
             {"username": self.username, "password": self.password},
             format="json",
         )
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
-        self.assertIn("token", resp.data)
-        token = resp.data["token"]
+        # Response returns user info (no token when using cookie/session auth)
+        self.assertIn("username", resp.data)
 
-        # Use token to GET users
-        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token}")
+        # The test client stores cookies from responses; use the same client to GET users
         resp2 = self.client.get("/api/auth/users/")
         self.assertEqual(resp2.status_code, status.HTTP_200_OK)
         # Expect at least one user matching the username
@@ -62,11 +61,10 @@ class AuthApiTests(TestCase):
             format="json",
         )
         self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
-        self.assertIn("token", resp.data)
+        # Response returns user info (session cookie set)
+        self.assertIn("username", resp.data)
 
-        # Use token to confirm user exists in users list
-        token = resp.data["token"]
-        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token}")
+        # Use same client (with session cookie) to confirm user exists in users list
         resp2 = self.client.get("/api/auth/users/")
         self.assertEqual(resp2.status_code, status.HTTP_200_OK)
         usernames = [u.get("username") for u in resp2.data]
