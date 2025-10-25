@@ -27,6 +27,8 @@ class AuthApiTests(TestCase):
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         # Response returns user info (no token when using cookie/session auth)
         self.assertIn("username", resp.data)
+        # Ensure login response set a CSRF cookie for subsequent unsafe requests
+        self.assertIn("csrftoken", self.client.cookies.keys())
 
         # The test client stores cookies from responses; use the same client to GET users
         resp2 = self.client.get("/api/auth/users/")
@@ -63,6 +65,8 @@ class AuthApiTests(TestCase):
         self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
         # Response returns user info (session cookie set)
         self.assertIn("username", resp.data)
+        # Ensure register response also set a CSRF cookie
+        self.assertIn("csrftoken", self.client.cookies.keys())
 
         # Use same client (with session cookie) to confirm user exists in users list
         resp2 = self.client.get("/api/auth/users/")
@@ -79,3 +83,11 @@ class AuthApiTests(TestCase):
         )
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("detail", resp.data)
+
+    def test_get_csrf_token(self):
+        # Frontend should be able to GET a CSRF token and receive a cookie
+        resp = self.client.get("/api/auth/csrf/")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertIn("csrfToken", resp.data)
+        # The client should have received a csrftoken cookie
+        self.assertIn("csrftoken", self.client.cookies.keys())

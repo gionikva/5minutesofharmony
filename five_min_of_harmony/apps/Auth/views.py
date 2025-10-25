@@ -6,8 +6,12 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from django.conf import settings
 from .utils import time_until_next_action, user_has_action
+from django.middleware.csrf import get_token
+from django.views.decorators.csrf import ensure_csrf_cookie
+from .models import Profile
 
 
+@ensure_csrf_cookie
 @api_view(["POST"])
 @permission_classes([permissions.AllowAny])
 def login_view(request):
@@ -46,6 +50,7 @@ def users_list(request):
     return Response(list(qs))
 
 
+@ensure_csrf_cookie
 @api_view(["POST"])
 @permission_classes([permissions.AllowAny])
 def register_view(request):
@@ -109,3 +114,48 @@ def has_action(request):
     """
     user = request.user
     return Response({"has_action": user_has_action(user)})
+
+
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def use_action(request):
+    """Consume the user's action if available (requires session cookie).
+
+    This endpoint requires the user to be authenticated via the Django
+    session cookie. Clients should include the `X-CSRFToken` header when
+    making POST requests. If the user has an available action, `last_used`
+    is updated and a success response is returned; otherwise a 400 is
+    returned indicating the action is on cooldown.
+    """
+    user = request.user
+    profile, _ = Profile.objects.get_or_create(user=user)
+    if not profile.has_action:
+        return Response(
+            {"detail": "action not available"}, status=status.HTTP_400_BAD_REQUEST
+        )
+    profile.last_used = timezone.now()
+    profile.save()
+    return Response(
+        {
+            "detail": "action consumed",
+            "next_available_in_seconds": int(
+                getattr(settings, "ACTION_TICK_SECONDS", 300)
+            ),
+        }
+    )
+
+
+# Provide a CSRF-friendly endpoint. Hitting this (GET) will set the csrftoken cookie
+# and return the current token in JSON so SPA frontends can bootstrap and include
+# the token in subsequent unsafe requests (POST/PUT/DELETE).
+@ensure_csrf_cookie
+@api_view(["GET"])
+@permission_classes([permissions.AllowAny])
+def csrf_view(request):
+    """Return a CSRF token and ensure the CSRF cookie is set.
+
+    This uses Django's ensure_csrf_cookie decorator so cookie attributes
+    (samesite, secure, domain) follow settings automatically.
+    """
+    token = get_token(request)
+    return Response({"csrfToken": token})
