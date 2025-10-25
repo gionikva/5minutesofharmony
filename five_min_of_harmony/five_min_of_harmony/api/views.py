@@ -43,3 +43,36 @@ def users_list(request):
     User = get_user_model()
     qs = User.objects.all().values("username", "email")
     return Response(list(qs))
+
+
+@api_view(["POST"])
+@permission_classes([permissions.AllowAny])
+def register_view(request):
+    """Create a user with username and password.
+
+    Expected POST body: {"username": "...", "password": "...", "email": "..." (optional)}
+    Returns 201 with token and user info on success.
+    """
+    username = request.data.get("username")
+    password = request.data.get("password")
+    email = request.data.get("email", "")
+
+    if not username or not password:
+        return Response(
+            {"detail": "username and password required"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    User = get_user_model()
+    if User.objects.filter(username=username).exists():
+        return Response(
+            {"detail": "username already exists"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    user = User.objects.create_user(username=username, email=email, password=password)
+    token, _ = Token.objects.get_or_create(user=user)
+    return Response(
+        {"token": token.key, "username": user.username, "email": user.email},
+        status=status.HTTP_201_CREATED,
+    )

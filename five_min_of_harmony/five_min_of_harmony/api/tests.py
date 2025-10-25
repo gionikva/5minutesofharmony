@@ -44,3 +44,40 @@ class AuthApiTests(TestCase):
         )
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("detail", resp.data)
+
+    def test_register_user(self):
+        # Ensure registration of a new user succeeds and returns a token
+        new_username = "newuser"
+        new_password = "newpass123"
+        # remove if exists
+        self.User.objects.filter(username=new_username).delete()
+
+        resp = self.client.post(
+            "/api/auth/register/",
+            {
+                "username": new_username,
+                "password": new_password,
+                "email": "n@example.com",
+            },
+            format="json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertIn("token", resp.data)
+
+        # Use token to confirm user exists in users list
+        token = resp.data["token"]
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token}")
+        resp2 = self.client.get("/api/auth/users/")
+        self.assertEqual(resp2.status_code, status.HTTP_200_OK)
+        usernames = [u.get("username") for u in resp2.data]
+        self.assertIn(new_username, usernames)
+
+    def test_register_duplicate_username(self):
+        # Attempt to register with an existing username should fail
+        resp = self.client.post(
+            "/api/auth/register/",
+            {"username": self.username, "password": "whatever"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("detail", resp.data)
