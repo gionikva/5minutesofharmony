@@ -15,8 +15,8 @@ class Note(OrderedModel):
     )
     duration = models.PositiveIntegerField()
     pitch = models.CharField()    
-
     order_with_respect_to = 'measure'
+    initialized = models.BooleanField()
 
     class Meta(OrderedModel.Meta):
         pass
