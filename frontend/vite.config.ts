@@ -5,4 +5,8 @@ import tsconfigPaths from "vite-tsconfig-paths";
 
 export default defineConfig({
   plugins: [tailwindcss(), reactRouter(), tsconfigPaths()],
+  // Ensure VexFlow is pre-bundled to avoid optimizeDeps races when dynamically importing it
+  optimizeDeps: {
+    include: ["vexflow", "react-router"],
+  },
 });

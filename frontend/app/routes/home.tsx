@@ -2,6 +2,8 @@ import type { Route } from "./+types/home";
 import { Welcome } from "../welcome/welcome";
 import NoteEditor from "../components/NoteEditor";
 
+import { initialMeasures } from "~/components/constants";
+
 export function meta({}: Route.MetaArgs) {
   return [
     { title: "5 Minutes of Harmony" },
@@ -12,7 +14,7 @@ export function meta({}: Route.MetaArgs) {
 export default function Home() {
   return (
     <div className="container mx-auto p-4">
-      <NoteEditor width={1600} />
+      <NoteEditor width={1600} initialMeasures={initialMeasures} />
     </div>
   );
 }
