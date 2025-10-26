@@ -1,9 +1,9 @@
 from django.contrib import admin
-from .models import SheetMusic
+from .models import Note
 
 # Register your models here.
-@admin.register(SheetMusic)
-class SheetMusicAdmin(admin.ModelAdmin):
-    list_display = ('measure', 'value', 'pitch', 'flourish')
+@admin.register(Note)
+class Note(admin.ModelAdmin):
+    list_display = ('measure', 'duration', 'pitch','initialized','order')
     list_filter = ('measure',)
 
