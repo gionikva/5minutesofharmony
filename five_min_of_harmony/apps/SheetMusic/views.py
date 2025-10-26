@@ -72,6 +72,20 @@ def combine_pitch(request):
     return Response({"success": True}, status=status.HTTP_200_OK)
 
 
+@api_view(['GET'])
+def get_sheet_music(request):
+    measures = Measure.objects.order_by('index')
+    data = {}
+    for measure in measures:
+        meas_dict = {}
+        index = measure.index
+        meas_dict["measure_index"] = index
+        notes = measure.note_set.all().order_by('order')
+        note_list = []
+        for note in notes:
+            note_dict = {}
+            
+
 
 
 

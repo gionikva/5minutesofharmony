@@ -4,7 +4,7 @@ from ordered_model.models import OrderedModel
 # Create your models here.
 
 class Measure(models.Model):
-    meas_num = models.PositiveIntegerField()
+    index = models.PositiveIntegerField()
 
 
 class Note(OrderedModel):
