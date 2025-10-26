@@ -1,3 +1,4 @@
+import type { M } from "node_modules/react-router/dist/development/context-DSyS5mLj.mjs";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 /**
@@ -14,23 +15,17 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 
 // === Types ===
 
-type Duration = "whole" | "half" | "quarter" | "eighth";
+type Duration = "whole" | "half" | "quarter" | "eighth" | "sixteenth";
 
 type Accidental = "natural" | "sharp" | "flat" | null;
-
-interface Note {
-    id: string;
-    x: number; // x position in SVG pixels (snapped to grid)
-    degree: number; // staff degree relative to E4 on the bottom line (E4 = 0, F4 = 1, G4 = 2, ...)
-    duration: Duration;
-    accidental: Accidental;
-}
 
 interface StaffNoteEditorProps {
     width?: number;
     height?: number;
     beatWidth?: number; // pixel width for a beat/grid step
     nRows?: number;
+    /** Optional initial measures to render */
+    initialMeasures?: Measure[];
     onChange?: (notes: ExportedNote[]) => void;
 }
 
@@ -42,6 +37,53 @@ export interface ExportedNote {
     duration: Duration;
     x: number;
 }
+
+// Backend-friendly Note object shape. We'll send/receive this from the server.
+// `value` is an integer quantized duration (ticks). We use 16 ticks = whole note,
+// 8 = half, 4 = quarter, 2 = eighth. This keeps everything integer-based for easy
+// transport and comparisons. `flourish` is a dictionary of accent/ornament flags.
+// `new` indicates whether this note was freshly created on the client.
+export interface BackendNote {
+    id: string;
+    x: number;
+    // duration encoded as ticks (int): whole=16, half=8, quarter=4, eighth=2
+    duration: number;
+    // pitch as a string like "C4", "F#5", "Bb3"
+    pitch: string;
+    // arbitrary flags describing articulations/accents
+    flourish: Record<string, boolean>;
+    // whether the note is from an uninitialized measure of rests
+    new: boolean;
+}
+
+// Convert our local Note -> BackendNote for sending to the server.
+function durationToTicks(d: Duration): number {
+    switch (d) {
+        case "whole":
+            return 16;
+        case "half":
+            return 8;
+        case "quarter":
+            return 4;
+        case "eighth":
+            return 2;
+        default:
+            return 4;
+    }
+}
+
+export interface Note {
+    id: string;
+    measure: number;
+    tick: number;
+    degree: number;
+    duration: Duration;
+    accidental: Accidental;
+}
+
+export type Measure = { id: string; notes: Note[] };
+
+// (noteToBackend is defined after layout helpers so it can compute x using getNoteX)
 
 // === Helpers: music theory-ish mapping ===
 
@@ -107,6 +149,7 @@ const StaffNoteEditor: React.FC<StaffNoteEditorProps> = ({
     height = 800,
     beatWidth = 40,
     nRows = 4,
+    initialMeasures,
     onChange,
 }) => {
     // Layout constants
@@ -127,29 +170,42 @@ const StaffNoteEditor: React.FC<StaffNoteEditorProps> = ({
     const staffMid = (staffTop + staffBottom) / 2;
     const positionStep = lineGap / 2; // each staff degree (line/space)
 
-    const [notes, setNotes] = useState<Note[]>([]);
+    // Measures: initialize with 8 logical measures but render up to 80
+    const RENDER_MEASURES = 80;
+    const INITIAL_MEASURES = 8;
+    type Measure = { id: string; notes: Note[] };
+    const [measures, setMeasures] = useState<Measure[]>(() =>
+        initialMeasures && initialMeasures.length > 0
+            ? // ensure each note has correct measure index
+              initialMeasures.map((m, mi) => ({ ...m, notes: m.notes.map((n) => ({ ...n, measure: n.measure ?? mi })) }))
+            : Array.from({ length: INITIAL_MEASURES }, (_, i) => ({ id: `m${i}`, notes: [] }))
+    );
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [toolDuration, setToolDuration] = useState<Duration>("quarter");
     const [toolAcc, setToolAcc] = useState<Accidental>(null);
-    const [isEraser, setIsEraser] = useState<boolean>(false);
-    const dragState = useRef<{ id: string; startX: number; startY: number; origX: number; origDegree: number; shift: boolean } | null>(null);
 
-    // Export callback
+    // Export callback: flatten measures into exported notes (approximate x)
     useEffect(() => {
         if (!onChange) return;
-        const exported: ExportedNote[] = notes.map((n) => {
-            const { step, octave } = degreeToStepOctave(n.degree);
-            const midi = stepOctaveToMidi(step, octave, n.accidental);
-            return {
-                id: n.id,
-                pitch: degreeAccToPitchString(n.degree, n.accidental),
-                midi,
-                duration: n.duration,
-                x: n.x,
-            };
-        });
+        const totalTicks = RENDER_MEASURES * 16;
+        const totalWidth = staffRight - staffLeft;
+        const exported: ExportedNote[] = measures.flatMap((m, mi) =>
+            m.notes.map((n) => {
+                const { step, octave } = degreeToStepOctave(n.degree);
+                const midi = stepOctaveToMidi(step, octave, n.accidental);
+                const globalTick = n.measure * 16 + n.tick;
+                const x = staffLeft + (globalTick / totalTicks) * totalWidth;
+                return {
+                    id: n.id,
+                    pitch: degreeAccToPitchString(n.degree, n.accidental),
+                    midi,
+                    duration: n.duration,
+                    x,
+                };
+            })
+        );
         onChange(exported);
-    }, [notes, onChange]);
+    }, [measures, onChange]);
 
     // Map Y => staff degree (nearest line/space)
     const yToDegree = (y: number) => {
@@ -161,14 +217,33 @@ const StaffNoteEditor: React.FC<StaffNoteEditorProps> = ({
     // Map degree => Y
     const degreeToY = (degree: number) => staffBottom - degree * positionStep;
 
-    // Snap X to grid within staff bounds
-    const snapX = (x: number) => {
-        const clamped = Math.max(staffLeft + 8, Math.min(staffRight - 8, x));
-        const base = staffLeft;
-        const step = beatWidth / 2; // finer grid: eighth-note steps horizontally
-        const snapped = Math.round((clamped - base) / step) * step + base;
-        return snapped;
+    // Tick/grid helpers
+    const totalTicks = RENDER_MEASURES * 16;
+    const tickWidth = (staffRight - staffLeft) / totalTicks;
+
+    const snapTickFromX = (x: number) => {
+        const clamped = Math.max(staffLeft + 1, Math.min(staffRight - 1, x));
+        const relative = (clamped - staffLeft) / (staffRight - staffLeft);
+        const globalTick = Math.round(relative * totalTicks);
+        const measure = Math.floor(globalTick / 16);
+        const tick = mod(globalTick, 16);
+        return { measure, tick };
     };
+
+    const getNoteX = (measureIndex: number, tick: number) => {
+        const globalTick = measureIndex * 16 + tick;
+        return staffLeft + globalTick * tickWidth;
+    };
+
+    // Now that layout helpers exist, define noteToBackend which converts a Note to the backend shape
+    const noteToBackend = (n: Note): BackendNote => ({
+        id: n.id,
+        x: getNoteX(n.measure, n.tick),
+        duration: durationToTicks(n.duration),
+        pitch: degreeAccToPitchString(n.degree, n.accidental),
+        flourish: {},
+        new: true,
+    });
 
     // Ledger lines needed for a degree (beyond the 5-line staff)
     const ledgerLineYs = (degree: number) => {
@@ -185,8 +260,8 @@ const StaffNoteEditor: React.FC<StaffNoteEditorProps> = ({
     // Determine stem direction (simple rule)
     const stemUp = (degree: number) => degree < 6; // below/at B4 => stems up
 
-    // Add a note at click location
-    const handleAddAt = (evt: React.MouseEvent<SVGSVGElement, MouseEvent>) => {
+    // Click on the staff: if a note is selected, move its pitch to the clicked Y
+    const handleStaffClick = (evt: React.MouseEvent<SVGSVGElement, MouseEvent>) => {
         const svg = evt.currentTarget;
         const pt = svg.createSVGPoint();
         pt.x = evt.clientX;
@@ -195,117 +270,76 @@ const StaffNoteEditor: React.FC<StaffNoteEditorProps> = ({
         if (!ctm) return;
         const p = pt.matrixTransform(ctm.inverse());
 
-        // Only add within staff vertical band (with some tolerance)
+        // Only operate within staff vertical band
         if (p.y < staffTop - 40 || p.y > staffBottom + 40) return;
 
-        const degree = yToDegree(p.y);
-        const x = snapX(p.x);
-
-        if (isEraser) {
-            // remove nearest note if within hit radius
-            const idx = findNoteAt(x, degree);
-            if (idx >= 0) removeAt(idx);
-            return;
-        }
-
-        const id = cryptoRandomId();
-        const note: Note = { id, x, degree, duration: toolDuration, accidental: toolAcc };
-        setNotes((prev) => insertNote(prev, note));
-        setSelectedId(id);
+        if (!selectedId) return;
+        const newDegree = yToDegree(p.y);
+        // find note and update its degree
+        setMeasures((prev) => {
+            const copy = prev.map((m) => ({ ...m, notes: [...m.notes] }));
+            for (let mi = 0; mi < copy.length; mi++) {
+                const idx = copy[mi].notes.findIndex((n) => n.id === selectedId);
+                if (idx >= 0) {
+                    copy[mi].notes[idx] = { ...copy[mi].notes[idx], degree: newDegree };
+                    break;
+                }
+            }
+            return copy;
+        });
     };
-
-    // Insert keeping ascending x order (stable)
-    function insertNote(arr: Note[], n: Note) {
-        const copy = [...arr];
-        let i = 0;
-        while (i < copy.length && copy[i].x <= n.x) i++;
-        copy.splice(i, 0, n);
-        return copy;
-    }
-
-    const findNoteAt = (x: number, degree: number) => {
-        // hit test by XY proximity
-        const hitDX = 14;
-        const hitDeg = 1; // within one degree
-        const idx = notes.findIndex((n) => Math.abs(n.x - x) <= hitDX && Math.abs(n.degree - degree) <= hitDeg);
-        return idx;
-    };
-
-    const removeAt = (idx: number) => setNotes((prev) => prev.filter((_, i) => i !== idx));
 
     const handleSelectNote = (id: string) => setSelectedId((cur) => (cur === id ? null : id));
 
-    // Keyboard: delete/escape
+    // Keyboard: delete/escape and pitch nudges
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
-            if (e.key === "Escape") setSelectedId(null);
-            if (e.key === "Delete" || e.key === "Backspace") {
-                if (!selectedId) return;
-                setNotes((prev) => prev.filter((n) => n.id !== selectedId));
+            if (e.key === "Escape") {
                 setSelectedId(null);
+                return;
             }
+            if (!selectedId) return;
+            setMeasures((prev) => {
+                const copy = prev.map((m) => ({ ...m, notes: [...m.notes] }));
+                for (let mi = 0; mi < copy.length; mi++) {
+                    const idx = copy[mi].notes.findIndex((n) => n.id === selectedId);
+                    if (idx >= 0) {
+                        const note = copy[mi].notes[idx];
+                        if (e.key === "Delete" || e.key === "Backspace") {
+                            copy[mi].notes.splice(idx, 1);
+                            setSelectedId(null);
+                        } else if (e.key === "ArrowUp") {
+                            copy[mi].notes[idx] = { ...note, degree: note.degree + 1 };
+                        } else if (e.key === "ArrowDown") {
+                            copy[mi].notes[idx] = { ...note, degree: note.degree - 1 };
+                        }
+                        break;
+                    }
+                }
+                return copy;
+            });
         };
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
     }, [selectedId]);
 
-    // Drag notes: mouse handlers on SVG
-    const onMouseDownNote = (id: string) => (e: React.MouseEvent) => {
+    // No drag behavior: selecting a note is done by clicking it; pitch changes via keyboard or palette.
+    const onMouseMove = (_e: React.MouseEvent<SVGSVGElement>) => {};
+    const onMouseUp = () => {};
 
-      
-
-        if (isEraser) {
-            // remove nearest note if within hit radius
-            const idx = notes.findIndex((n) => n.id === id)
-            if (idx >= 0) removeAt(idx);
-            return;
-        }
-        e.stopPropagation();
-        setSelectedId(id);
-        dragState.current = {
-            id,
-            startX: e.clientX,
-            startY: e.clientY,
-            origX: notes.find((n) => n.id === id)!.x,
-            origDegree: notes.find((n) => n.id === id)!.degree,
-            shift: e.shiftKey,
-        };
-    };
-
-    const onMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
-        if (!dragState.current) return;
-        const ds = dragState.current;
-        setNotes((prev) =>
-            prev.map((n) => {
-                if (n.id !== ds.id) return n;
-                let x = ds.origX + (e.clientX - ds.startX);
-                x = snapX(x);
-                let degree = n.degree;
-                if (ds.shift) {
-                    // pitch change only when Shift held
-                    const deltaY = e.clientY - ds.startY;
-                    const steps = Math.round(-deltaY / (positionStep));
-                    degree = ds.origDegree + steps;
-                }
-                return { ...n, x, degree };
-            })
-        );
-    };
-
-    const onMouseUp = () => {
-        dragState.current = null;
-    };
-
-    // Simple playback
+    // Simple playback over flattened measures
     const play = async () => {
-        if (notes.length === 0) return;
+        const flat = measures.flatMap((m) => m.notes.map((n) => ({ ...n })));
+        if (flat.length === 0) return;
         const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
         const bpm = 96;
         const secPerBeat = 60 / bpm;
         const now = ctx.currentTime;
 
         let t = now + 0.05;
-        for (const n of [...notes].sort((a, b) => a.x - b.x)) {
+        // sort by measure/tick
+        flat.sort((a, b) => (a.measure - b.measure) * 16 + (a.tick - b.tick));
+        for (const n of flat) {
             const { step, octave } = degreeToStepOctave(n.degree);
             const midi = stepOctaveToMidi(step, octave, n.accidental);
             const freq = midiToFreq(midi);
@@ -373,11 +407,14 @@ const StaffNoteEditor: React.FC<StaffNoteEditorProps> = ({
 
                 <div className="w-px h-6 bg-gray-200 mx-2" />
 
-                {toolbarButton(isEraser ? "Eraser On" : "Eraser", isEraser, () => setIsEraser((s) => !s), "Click to delete notes")}
-
                 <div className="ml-auto" />
                 {toolbarButton("Play", false, play, "Play notes left to right")}
-                {toolbarButton("Clear", false, () => setNotes([]), "Remove all notes")}
+                {toolbarButton(
+                    "Clear",
+                    false,
+                    () => setMeasures(Array.from({ length: INITIAL_MEASURES }, (_, i) => ({ id: `m${i}`, notes: [] }))),
+                    "Remove all notes"
+                )}
             </div>
 
             {/* Staff + Notes */}
@@ -388,7 +425,7 @@ const StaffNoteEditor: React.FC<StaffNoteEditorProps> = ({
                 onMouseMove={onMouseMove}
                 onMouseUp={onMouseUp}
                 onMouseLeave={onMouseUp}
-                onClick={handleAddAt}
+                onClick={handleStaffClick}
             >
                 {/* Staff background */}
                 <rect x={0} y={0} width={width} height={height} fill="white" rx={16} />
@@ -442,62 +479,72 @@ const StaffNoteEditor: React.FC<StaffNoteEditorProps> = ({
                     />
                 ))}
 
-                {/* Notes */}
-                {notes.map((n) => {
-                    const y = degreeToY(n.degree);
-                    const { filled, showStem, flag } = durationToNotehead(n.duration);
-                    const stemIsUp = stemUp(n.degree);
-                    const stemX = stemIsUp ? n.x + 8 : n.x - 8;
-                    const stemY1 = y + (filled ? 0 : 0); // top of notehead
-                    const stemY2 = stemIsUp ? y - 35 : y + 35;
-                    const isSelected = n.id === selectedId;
-
+                {/* Measure markers: every 16 grid ticks draw a stronger vertical bar */}
+                {Array.from({ length: RENDER_MEASURES }).map((_, mi) => {
+                    const x = staffLeft + mi * 16 * tickWidth;
                     return (
-                        <g key={n.id} onMouseDown={onMouseDownNote(n.id)} onClick={(e) => { e.stopPropagation(); handleSelectNote(n.id); }}>
-                            {/* ledger lines */}
-                            {ledgerLineYs(n.degree).map((ly, idx) => (
-                                <line key={`ll${idx}`} x1={n.x - 14} x2={n.x + 14} y1={ly} y2={ly} stroke="#222" strokeWidth={1} />
-                            ))}
-
-                            {/* accidental */}
-                            {n.accidental && (
-                                <text x={n.x - 20} y={y + 5} fontSize={16} fill="#111" style={{ fontFamily: "serif" }}>
-                                    {accidentalGlyph(n.accidental)}
-                                </text>
-                            )}
-
-                            {/* notehead */}
-                            <ellipse
-                                cx={n.x}
-                                cy={y}
-                                rx={9}
-                                ry={7}
-                                transform={`rotate(-20 ${n.x} ${y})`}
-                                fill={filled ? (isSelected ? "#2563eb" : "#111") : "white"}
-                                stroke={isSelected ? "#2563eb" : "#111"}
-                                strokeWidth={1.4}
-                            />
-
-                            {/* stem */}
-                            {showStem && (
-                                <line x1={stemX} x2={stemX} y1={stemIsUp ? y - 1 : y + 1} y2={stemY2} stroke={isSelected ? "#2563eb" : "#111"} strokeWidth={1.4} />
-                            )}
-
-                            {/* simple flag for eighth notes */}
-                            {flag && (
-                                <path
-                                    d={stemIsUp ? `M ${stemX} ${stemY2} c 8 4, 16 8, 16 18 c -7 -5, -14 -7, -16 -8 z` : `M ${stemX} ${stemY2} c -8 -4, -16 -8, -16 -18 c 7 5, 14 7, 16 8 z`}
-                                    fill={isSelected ? "#2563eb" : "#111"}
-                                />
-                            )}
-                        </g>
+                        <line key={`measure-${mi}`} x1={x} x2={x} y1={staffTop - 22} y2={staffBottom + 22} stroke="#999" strokeWidth={1.2} />
                     );
                 })}
+
+                {/* Notes: iterate measures and render each note */}
+                {measures.map((m, mi) =>
+                    m.notes.map((n) => {
+                        const x = getNoteX(mi, n.tick);
+                        const y = degreeToY(n.degree);
+                        const { filled, showStem, flag } = durationToNotehead(n.duration);
+                        const stemIsUp = stemUp(n.degree);
+                        const stemX = stemIsUp ? x + 8 : x - 8;
+                        const stemY2 = stemIsUp ? y - 35 : y + 35;
+                        const isSelected = n.id === selectedId;
+
+                        return (
+                            <g key={n.id} onClick={(e) => { e.stopPropagation(); handleSelectNote(n.id); }}>
+                                {/* ledger lines */}
+                                {ledgerLineYs(n.degree).map((ly, idx) => (
+                                    <line key={`ll${idx}`} x1={x - 14} x2={x + 14} y1={ly} y2={ly} stroke="#222" strokeWidth={1} />
+                                ))}
+
+                                {/* accidental */}
+                                {n.accidental && (
+                                    <text x={x - 20} y={y + 5} fontSize={16} fill="#111" style={{ fontFamily: "serif" }}>
+                                        {accidentalGlyph(n.accidental)}
+                                    </text>
+                                )}
+
+                                {/* notehead */}
+                                <ellipse
+                                    cx={x}
+                                    cy={y}
+                                    rx={9}
+                                    ry={7}
+                                    transform={`rotate(-20 ${x} ${y})`}
+                                    fill={filled ? (isSelected ? "#2563eb" : "#111") : "white"}
+                                    stroke={isSelected ? "#2563eb" : "#111"}
+                                    strokeWidth={1.4}
+                                />
+
+                                {/* stem */}
+                                {showStem && (
+                                    <line x1={stemX} x2={stemX} y1={stemIsUp ? y - 1 : y + 1} y2={stemY2} stroke={isSelected ? "#2563eb" : "#111"} strokeWidth={1.4} />
+                                )}
+
+                                {/* simple flag for eighth notes */}
+                                {flag && (
+                                    <path
+                                        d={stemIsUp ? `M ${stemX} ${stemY2} c 8 4, 16 8, 16 18 c -7 -5, -14 -7, -16 -8 z` : `M ${stemX} ${stemY2} c -8 -4, -16 -8, -16 -18 c 7 5, 14 7, 16 8 z`}
+                                        fill={isSelected ? "#2563eb" : "#111"}
+                                    />
+                                )}
+                            </g>
+                        );
+                    })
+                )}
             </svg>
 
             {/* Legend & tips */}
             <div className="text-xs text-gray-500 mt-2 px-1">
-                Click to add notes. Use the toolbar to set duration & accidental. Click a note to select, then press Delete/Backspace to remove. Hold <kbd>Shift</kbd> while dragging to change pitch; drag without Shift to move in time.
+                Click a note to select it. Use the toolbar to set duration & accidental. Press Delete/Backspace to remove a selected note. Use arrow keys to nudge pitch, or click the staff to move a selected note vertically.
             </div>
         </div>
     );
